@@ -1,0 +1,17 @@
+{
+  "name": "debtlens-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DebtLens backend — GitHub traversal, static analysis, and LLM debt extraction",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "analyze": "node index.js",
+    "demo": "node index.js https://github.com/sindresorhus/slugify",
+    "demo:express": "node index.js https://github.com/expressjs/express"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
