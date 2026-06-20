@@ -1,11 +1,14 @@
 // index.js — DebtLens backend entry point.
 //
-// Step 1 (current): CLI driver.
+// CLI driver:
 //   node index.js <github-url>
-// traverses the repo, runs the static analysis pass, and prints a JSON
-// metrics object for each analyzed file. No LLM, no server yet.
 //
-// Later steps add LLM extraction (step 2) and an Express server.
+// Step 1: traverse the repo and run the static-analysis pass (no LLM).
+// Step 2: pick the 10 files with the highest loc × maxNestingDepth score,
+//         send each to the Anthropic API, and print validated, line-grounded
+//         complexity-debt items.
+//
+// Later steps add the other debt categories, scoring, and an Express server.
 
 import './env.js'; // load .env before anything reads process.env
 import { getRepoFiles } from './github.js';
@@ -14,15 +17,20 @@ import {
   analyzeDependencies,
   buildRepoIndex,
 } from './staticAnalysis.js';
+import { extractComplexityDebt } from './llmExtractor.js';
+
+const COMPLEXITY_FILE_LIMIT = 10;
 
 /**
- * Run the full static-analysis pass over a repo and return per-file metrics.
+ * Run the full static-analysis pass over a repo.
+ * Returns the file contents alongside the metrics so later (LLM) steps can use
+ * both without re-fetching.
  */
 export async function analyzeRepo(repoUrl) {
   const { meta, files, allPaths } = await getRepoFiles(repoUrl);
   const repoIndex = buildRepoIndex(allPaths);
 
-  console.log('🧮 Running static analysis...\n');
+  console.log('🧮 Running static analysis...');
 
   const fileMetrics = [];
   for (const file of files) {
@@ -35,7 +43,48 @@ export async function analyzeRepo(repoUrl) {
     fileMetrics.push(metrics);
   }
 
-  return { meta, fileMetrics };
+  return { meta, files, fileMetrics };
+}
+
+/**
+ * Pick the files to run complexity extraction on: highest loc × maxNestingDepth.
+ * Only real source files are eligible — markdown/config carry no code-complexity
+ * debt, so we don't spend LLM calls on them.
+ */
+export function selectComplexityFiles(fileMetrics, limit = COMPLEXITY_FILE_LIMIT) {
+  return fileMetrics
+    .filter((m) => m.language !== 'other')
+    .map((m) => ({ metrics: m, score: m.loc * m.maxNestingDepth }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((x) => x.metrics);
+}
+
+/**
+ * Step 2: run complexity-debt extraction over the selected files.
+ * @returns array of { file, debtItems } (debtItems already line-validated)
+ */
+export async function extractComplexityForRepo(files, fileMetrics) {
+  const contentByPath = new Map(files.map((f) => [f.path, f]));
+  const selected = selectComplexityFiles(fileMetrics);
+
+  console.log(
+    `\n🤖 Extracting complexity debt from the top ${selected.length} files ` +
+      `by loc × maxNestingDepth (Anthropic API)...`
+  );
+
+  const results = [];
+  for (const metrics of selected) {
+    const file = contentByPath.get(metrics.path);
+    if (!file) continue;
+    const score = metrics.loc * metrics.maxNestingDepth;
+    process.stdout.write(`   • ${metrics.path} (score ${score}) ... `);
+    const result = await extractComplexityDebt(file, metrics);
+    console.log(`${result.debtItems.length} grounded item(s)`);
+    results.push(result);
+  }
+
+  return results;
 }
 
 async function main() {
@@ -47,21 +96,28 @@ async function main() {
   }
 
   try {
-    const { meta, fileMetrics } = await analyzeRepo(repoUrl);
+    const { meta, files, fileMetrics } = await analyzeRepo(repoUrl);
+    console.log(`   Static analysis done for ${fileMetrics.length} files.`);
 
-    // Print one JSON metrics object per file (the Step 1 done-when condition).
-    for (const metrics of fileMetrics) {
-      console.log(JSON.stringify(metrics, null, 2));
+    const debtResults = await extractComplexityForRepo(files, fileMetrics);
+
+    // Print the validated, line-grounded debt items (Step 2 done-when).
+    console.log('\n===== Complexity debt (validated, line-grounded) =====\n');
+    for (const result of debtResults) {
+      if (result.debtItems.length === 0) continue;
+      console.log(JSON.stringify(result, null, 2));
     }
 
+    const filesWithDebt = debtResults.filter((r) => r.debtItems.length > 0).length;
+    const totalItems = debtResults.reduce((n, r) => n + r.debtItems.length, 0);
+
     console.log(
-      `\n✅ Analyzed ${fileMetrics.length} files from ${meta.fullName} ` +
-        `(${meta.language || 'unknown language'}).`
+      `\n✅ ${meta.fullName}: ${totalItems} complexity-debt item(s) across ` +
+        `${filesWithDebt} file(s) (of ${debtResults.length} analyzed).`
     );
-    if (!process.env.GITHUB_TOKEN) {
+    if (filesWithDebt < 3) {
       console.log(
-        'ℹ️  Tip: set GITHUB_TOKEN to raise the GitHub rate limit ' +
-          '(60 → 5000 req/hour).'
+        'ℹ️  Fewer than 3 files returned grounded debt — try a larger / messier repo.'
       );
     }
   } catch (err) {
