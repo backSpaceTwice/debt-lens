@@ -91,13 +91,23 @@ export function parseRepoUrl(input) {
   return { owner: parts[0], repo: parts[1] };
 }
 
+/**
+ * Resolve the GitHub token DebtLens should use. Prefers DEBTLENS_GITHUB_TOKEN
+ * so it never collides with a global GITHUB_TOKEN the user may already export
+ * for other tools (which would otherwise shadow backend/.env). Falls back to
+ * GITHUB_TOKEN for the simple single-token setup.
+ */
+export function githubToken() {
+  return process.env.DEBTLENS_GITHUB_TOKEN || process.env.GITHUB_TOKEN || '';
+}
+
 function authHeaders() {
   const headers = {
     Accept: 'application/vnd.github+json',
     'User-Agent': 'DebtLens',
     'X-GitHub-Api-Version': '2022-11-28',
   };
-  const token = process.env.GITHUB_TOKEN;
+  const token = githubToken();
   if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
 }
