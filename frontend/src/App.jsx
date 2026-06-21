@@ -91,6 +91,20 @@ function ErrorState({ message }) {
   );
 }
 
+function processSSEChunk(chunk, setLoadingSteps, setResult) {
+  if (!chunk.startsWith('data: ')) return;
+  let msg;
+  try { msg = JSON.parse(chunk.slice(6)); } catch { return; }
+
+  if (msg.type === 'progress') {
+    setLoadingSteps((prev) => [...prev, msg]);
+  } else if (msg.type === 'done') {
+    setResult(msg.result);
+  } else if (msg.type === 'error') {
+    throw new Error(msg.message);
+  }
+}
+
 export default function App() {
   const [result, setResult]           = useState(null);
   const [loading, setLoading]         = useState(false);
@@ -130,17 +144,7 @@ export default function App() {
         buffer = parts.pop();
 
         for (const part of parts) {
-          if (!part.startsWith('data: ')) continue;
-          let msg;
-          try { msg = JSON.parse(part.slice(6)); } catch { continue; }
-
-          if (msg.type === 'progress') {
-            setLoadingSteps((prev) => [...prev, msg]);
-          } else if (msg.type === 'done') {
-            setResult(msg.result);
-          } else if (msg.type === 'error') {
-            throw new Error(msg.message);
-          }
+          processSSEChunk(part, setLoadingSteps, setResult);
         }
       }
     } catch (err) {
