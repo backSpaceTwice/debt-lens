@@ -33,11 +33,14 @@ const PER_CATEGORY_LIMIT = 5;
  * Returns the file contents alongside the metrics so the LLM steps can use
  * both without re-fetching.
  */
-export async function analyzeRepo(repoUrl, fileCount = 30) {
+export async function analyzeRepo(repoUrl, fileCount = 30, onProgress = null) {
+  onProgress?.({ step: 'fetch', message: 'Fetching repository files…' });
   const { meta, files, allPaths } = await getRepoFiles(repoUrl, fileCount);
+  onProgress?.({ step: 'fetch_done', message: `${files.length} files retrieved`, fileCount: files.length });
   const repoIndex = buildRepoIndex(allPaths);
 
   console.log('🧮 Running static analysis...');
+  onProgress?.({ step: 'analysis', message: 'Running static analysis…' });
 
   const fileMetrics = [];
   for (const file of files) {
@@ -50,6 +53,7 @@ export async function analyzeRepo(repoUrl, fileCount = 30) {
     fileMetrics.push(metrics);
   }
 
+  onProgress?.({ step: 'analysis_done', message: 'Static analysis complete' });
   return { meta, files, fileMetrics };
 }
 
@@ -120,7 +124,7 @@ async function runWithConcurrency(tasks) {
  * All LLM calls run in parallel (capped at CONCURRENCY) across all categories.
  * @returns flat array of { file, category, debtItems } (already line-validated)
  */
-export async function extractAllDebt(files, fileMetrics) {
+export async function extractAllDebt(files, fileMetrics, onProgress = null) {
   const contentByPath = new Map(files.map((f) => [f.path, f]));
 
   const jobs = [
@@ -132,7 +136,9 @@ export async function extractAllDebt(files, fileMetrics) {
 
   const total = jobs.reduce((s, j) => s + j.files.length, 0);
   console.log(`\n🤖 LLM extraction — ${total} file(s) across 4 categories (concurrency ${CONCURRENCY})...`);
+  onProgress?.({ step: 'llm', message: 'Analyzing with AI…', done: 0, total });
 
+  let completed = 0;
   const tasks = [];
   for (const job of jobs) {
     for (const metrics of job.files) {
@@ -140,7 +146,9 @@ export async function extractAllDebt(files, fileMetrics) {
       if (!file) continue;
       tasks.push(async () => {
         const result = await job.fn(file, metrics);
+        completed++;
         console.log(`   ✓ [${job.name}] ${metrics.path} — ${result.debtItems.length} item(s)`);
+        onProgress?.({ step: 'llm', message: metrics.path, done: completed, total });
         return result;
       });
     }

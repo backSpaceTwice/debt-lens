@@ -1,5 +1,5 @@
 // server.js — DebtLens Express server.
-// POST /analyze  { repoUrl } → full analysis JSON
+// POST /analyze  → text/event-stream with progress events + final result
 
 import './env.js';
 import express from 'express';
@@ -18,40 +18,59 @@ app.post('/analyze', async (req, res) => {
   }
   const cap = Math.min(50, Math.max(1, parseInt(fileCount) || 30));
 
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  function send(type, data = {}) {
+    res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
+  }
+
   try {
-    const { meta, files, fileMetrics } = await analyzeRepo(repoUrl, cap);
-    const debtResults = await extractAllDebt(files, fileMetrics);
+    const { meta, files, fileMetrics } = await analyzeRepo(repoUrl, cap, (p) =>
+      send('progress', p)
+    );
+
+    const debtResults = await extractAllDebt(files, fileMetrics, (p) =>
+      send('progress', p)
+    );
+
+    send('progress', { step: 'scoring', message: 'Scoring and building report…' });
     const { overallHealth, categoryScores, fileScores } = scoreRepo(
       fileMetrics,
       debtResults,
       WEIGHTS
     );
 
-    // Include source content only for files that have debt items so the
-    // frontend drilldown can render a source viewer without a second request.
     const debtPaths = new Set(debtResults.map((r) => r.file));
     const fileContents = {};
     for (const f of files) {
       if (debtPaths.has(f.path)) fileContents[f.path] = f.content;
     }
 
-    res.json({
-      meta: {
-        fullName: meta.fullName,
-        language: meta.language ?? null,
-        fileCount: fileMetrics.length,
-        analyzedAt: new Date().toISOString(),
+    send('done', {
+      result: {
+        meta: {
+          fullName: meta.fullName,
+          language: meta.language ?? null,
+          fileCount: fileMetrics.length,
+          analyzedAt: new Date().toISOString(),
+        },
+        overallHealth,
+        categoryScores,
+        fileScores,
+        debtResults,
+        fileContents,
       },
-      overallHealth,
-      categoryScores,
-      fileScores,
-      debtResults,
-      fileContents,
     });
   } catch (err) {
     console.error('Analysis error:', err.message);
-    res.status(500).json({ error: err.message });
+    send('error', { message: err.message });
   }
+
+  res.end();
 });
 
 const PORT = process.env.PORT ?? 3001;

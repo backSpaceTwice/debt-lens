@@ -1,12 +1,23 @@
+import { useState } from 'react';
+
 const CATEGORY_LABELS = {
-  complexity: 'Complexity',
-  test: 'Test Coverage',
-  dependency: 'Dependencies',
+  complexity:    'Complexity',
+  test:          'Test Coverage',
+  dependency:    'Dependencies',
   documentation: 'Documentation',
 };
 
-// categoryScores from the backend are average LLM severity (0=no debt, 100=max debt).
-// Invert to a health score so color bands are consistent: green > 70, amber 40-70, red < 40.
+const CATEGORIES = ['complexity', 'test', 'dependency', 'documentation'];
+
+const DEFAULT_WEIGHTS = { complexity: 35, test: 30, dependency: 20, documentation: 15 };
+
+const SLIDER_COLORS = {
+  complexity:    '#6366f1',
+  test:          '#22c55e',
+  dependency:    '#f59e0b',
+  documentation: '#3b82f6',
+};
+
 function severityToHealth(severity) {
   return Math.round(100 - severity);
 }
@@ -15,6 +26,12 @@ function colorClass(score) {
   if (score > 70) return 'score-green';
   if (score >= 40) return 'score-amber';
   return 'score-red';
+}
+
+function bandLabel(score) {
+  if (score > 70) return 'Healthy';
+  if (score >= 40) return 'Needs attention';
+  return 'Critical';
 }
 
 function ScoreRing({ score }) {
@@ -39,12 +56,6 @@ function CategoryCard({ category, severity }) {
   );
 }
 
-function bandLabel(score) {
-  if (score > 70) return 'Healthy';
-  if (score >= 40) return 'Needs attention';
-  return 'Critical';
-}
-
 function formatDate(iso) {
   return new Date(iso).toLocaleString(undefined, {
     month: 'short', day: 'numeric', year: 'numeric',
@@ -53,7 +64,25 @@ function formatDate(iso) {
 }
 
 export default function HealthDashboard({ data }) {
-  const { meta, overallHealth, categoryScores } = data;
+  const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
+
+  const { meta, categoryScores } = data;
+
+  const totalWeight = CATEGORIES.reduce((s, c) => s + (weights[c] ?? 0), 0) || 1;
+
+  const overallHealth = Math.max(0, Math.min(100, Math.round(
+    100 - CATEGORIES.reduce((sum, cat) => {
+      return sum + (categoryScores[cat] ?? 0) * (weights[cat] ?? 0) / totalWeight;
+    }, 0)
+  )));
+
+  function setWeight(cat, val) {
+    setWeights((prev) => ({ ...prev, [cat]: Number(val) }));
+  }
+
+  function resetWeights() {
+    setWeights(DEFAULT_WEIGHTS);
+  }
 
   return (
     <div className="dashboard">
@@ -74,13 +103,43 @@ export default function HealthDashboard({ data }) {
       </div>
 
       <div className="category-grid">
-        {['complexity', 'test', 'dependency', 'documentation'].map((cat) => (
+        {CATEGORIES.map((cat) => (
           <CategoryCard
             key={cat}
             category={cat}
             severity={categoryScores[cat] ?? 0}
           />
         ))}
+      </div>
+
+      <div className="weight-panel">
+        <div className="weight-panel-header">
+          <span className="weight-panel-title">Severity Weights</span>
+          <span className="weight-panel-hint">Drag to adjust how each category affects the overall health score</span>
+          <button className="btn btn-ghost btn-sm weight-reset-btn" onClick={resetWeights}>
+            Reset
+          </button>
+        </div>
+        <div className="weight-rows">
+          {CATEGORIES.map((cat) => {
+            const pct = Math.round((weights[cat] ?? 0) / totalWeight * 100);
+            return (
+              <div key={cat} className="weight-row">
+                <span className="weight-label">{CATEGORY_LABELS[cat]}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={weights[cat]}
+                  onChange={(e) => setWeight(cat, e.target.value)}
+                  className="weight-slider"
+                  style={{ '--slider-color': SLIDER_COLORS[cat] }}
+                />
+                <span className="weight-pct">{pct}%</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
