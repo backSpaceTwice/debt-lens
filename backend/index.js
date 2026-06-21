@@ -33,8 +33,8 @@ const PER_CATEGORY_LIMIT = 5;
  * Returns the file contents alongside the metrics so the LLM steps can use
  * both without re-fetching.
  */
-export async function analyzeRepo(repoUrl) {
-  const { meta, files, allPaths } = await getRepoFiles(repoUrl);
+export async function analyzeRepo(repoUrl, fileCount = 30) {
+  const { meta, files, allPaths } = await getRepoFiles(repoUrl, fileCount);
   const repoIndex = buildRepoIndex(allPaths);
 
   console.log('🧮 Running static analysis...');

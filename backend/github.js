@@ -12,7 +12,7 @@
 // recommended, since traversing a repo costs roughly one request per file.
 
 const GITHUB_API = 'https://api.github.com';
-const FILE_CAP = 50;
+const MAX_FILE_CAP = 50;
 
 // In-memory caches, keyed for the lifetime of the process. Re-running an
 // analysis on the same repo will not re-hit the GitHub API.
@@ -189,7 +189,7 @@ async function getTree(owner, repo, branch) {
  * the UI. If commit data is unavailable or the budget runs out, any remaining
  * candidates keep their tree order as a stable fallback.
  */
-async function orderByRecency(owner, repo, branch, candidatePaths) {
+async function orderByRecency(owner, repo, branch, candidatePaths, fileCap) {
   const candidateSet = new Set(candidatePaths);
   const ordered = [];
   const seen = new Set();
@@ -211,12 +211,12 @@ async function orderByRecency(owner, repo, branch, candidatePaths) {
 
     // Process in chronological order (most-recent first) to preserve recency ranking.
     for (const detail of details) {
-      if (ordered.length >= FILE_CAP) break;
+      if (ordered.length >= fileCap) break;
       for (const file of detail.files || []) {
         if (candidateSet.has(file.filename) && !seen.has(file.filename)) {
           seen.add(file.filename);
           ordered.push(file.filename);
-          if (ordered.length >= FILE_CAP) break;
+          if (ordered.length >= fileCap) break;
         }
       }
     }
@@ -255,9 +255,10 @@ async function fetchBlob(owner, repo, sha) {
  *              { path, sha, content }
  *   allPaths — every analyzable path in the repo (used for hasTestFile checks)
  */
-export async function getRepoFiles(repoUrl) {
+export async function getRepoFiles(repoUrl, fileCount = 30) {
+  const FILE_CAP = Math.min(MAX_FILE_CAP, Math.max(1, fileCount));
   const { owner, repo } = parseRepoUrl(repoUrl);
-  console.log(`🔎 Traversing ${owner}/${repo} ...`);
+  console.log(`🔎 Traversing ${owner}/${repo} (cap: ${FILE_CAP} files)...`);
 
   const meta = await getRepoMeta(owner, repo);
   const tree = await getTree(owner, repo, meta.defaultBranch);
@@ -278,7 +279,8 @@ export async function getRepoFiles(repoUrl) {
     owner,
     repo,
     meta.defaultBranch,
-    analyzablePaths
+    analyzablePaths,
+    FILE_CAP
   );
   const selected = ordered.slice(0, FILE_CAP);
 

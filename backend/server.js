@@ -12,13 +12,14 @@ app.use(cors());
 app.use(express.json());
 
 app.post('/analyze', async (req, res) => {
-  const { repoUrl } = req.body ?? {};
+  const { repoUrl, fileCount } = req.body ?? {};
   if (!repoUrl) {
     return res.status(400).json({ error: 'repoUrl is required' });
   }
+  const cap = Math.min(50, Math.max(1, parseInt(fileCount) || 30));
 
   try {
-    const { meta, files, fileMetrics } = await analyzeRepo(repoUrl);
+    const { meta, files, fileMetrics } = await analyzeRepo(repoUrl, cap);
     const debtResults = await extractAllDebt(files, fileMetrics);
     const { overallHealth, categoryScores, fileScores } = scoreRepo(
       fileMetrics,

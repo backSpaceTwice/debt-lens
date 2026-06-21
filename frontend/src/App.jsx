@@ -1,21 +1,24 @@
 import { useState } from 'react';
 import RepoInput from './components/RepoInput.jsx';
 import HealthDashboard from './components/HealthDashboard.jsx';
+import DebtList from './components/DebtList.jsx';
 
 export default function App() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [selectedItem, setSelectedItem] = useState(null);
 
-  async function handleAnalyze(repoUrl) {
+  async function handleAnalyze(repoUrl, fileCount) {
     setLoading(true);
     setError(null);
     setResult(null);
+    setSelectedItem(null);
     try {
       const res = await fetch('/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl }),
+        body: JSON.stringify({ repoUrl, fileCount }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Analysis failed');
@@ -51,7 +54,15 @@ export default function App() {
           </div>
         )}
 
-        {result && !loading && <HealthDashboard data={result} />}
+        {result && !loading && (
+          <>
+            <HealthDashboard data={result} />
+            <DebtList
+              debtResults={result.debtResults}
+              onSelect={setSelectedItem}
+            />
+          </>
+        )}
       </main>
     </div>
   );
