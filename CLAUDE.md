@@ -176,6 +176,26 @@ function computeSeverityScore(metrics) {
 
 The auto-fix loop is: generate fix → apply to temp branch → syntax check → show diff → accept or discard. It never touches `main`. Every fix is on a throwaway branch the user explicitly merges or discards.
 
+> **Implementation note (as built — Step 9 is complete).** A few intentional
+> deviations from the spec below, all verified end-to-end against
+> `expressjs/express`:
+> - **JSON output:** `fixGenerator.js` uses structured outputs
+>   (`output_config.format` + a JSON schema), not assistant prefill — prefill
+>   returns a 400 on `claude-sonnet-4-6`. This is what reliably forces valid
+>   JSON and killed the "model returned prose" failures on large files.
+> - **`changedLineRefs` are diff-derived, not model-reported.** The model's
+>   self-reported list proved unreliable (often empty on real edits), so we
+>   compute the changed original-file lines from the actual diff and use that
+>   for the overlap/grounding gate. Stronger grounding, fewer false drops.
+> - **Isolation via a scratch repo, not a clone.** DebtLens only ever has file
+>   *contents* (50-file cap, GitHub API — no working clone), so `fixApplier.js`
+>   builds a throwaway temp git repo containing just the one file, commits it as
+>   the baseline, and puts the fix on `debtlens/autofix-{ts}`. The user's repo
+>   is provably never touched — the strongest form of the §9e invariant.
+> - **"Apply fix" copies the branch name** (the spec's "or copies the branch
+>   name" half); it does not push or open a PR yet. Real apply (local clone /
+>   GitHub PR / download) is a follow-up.
+
 #### 9a — Backend: fix generation (`fixGenerator.js`)
 
 For a given debt item, make a second Anthropic API call with the full file source, the debt item JSON, and the refactor suggestion. Ask for the complete rewritten file — not a patch, not a snippet, the full file. This avoids patch-application edge cases and is simpler to validate.
