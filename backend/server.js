@@ -27,6 +27,14 @@ app.post('/analyze', async (req, res) => {
       WEIGHTS
     );
 
+    // Include source content only for files that have debt items so the
+    // frontend drilldown can render a source viewer without a second request.
+    const debtPaths = new Set(debtResults.map((r) => r.file));
+    const fileContents = {};
+    for (const f of files) {
+      if (debtPaths.has(f.path)) fileContents[f.path] = f.content;
+    }
+
     res.json({
       meta: {
         fullName: meta.fullName,
@@ -38,6 +46,7 @@ app.post('/analyze', async (req, res) => {
       categoryScores,
       fileScores,
       debtResults,
+      fileContents,
     });
   } catch (err) {
     console.error('Analysis error:', err.message);

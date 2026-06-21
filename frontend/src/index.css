@@ -438,6 +438,223 @@
 
 .view-file-btn { margin-left: auto; }
 
+/* ── File drilldown overlay ───────────────────────────────────────────── */
+.drilldown-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2rem 1.5rem;
+  overflow-y: auto;
+}
+
+.drilldown-panel {
+  width: 100%;
+  max-width: 1200px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 4rem);
+  overflow: hidden;
+  animation: panel-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+/* ── Drilldown header ─────────────────────────────────────────────────── */
+.drilldown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 14px 14px 0 0;
+  flex-shrink: 0;
+  gap: 1rem;
+}
+
+.drilldown-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.drilldown-path {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.85rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drilldown-hl-count {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--amber);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 99px;
+  padding: 0.15rem 0.6rem;
+  font-weight: 600;
+}
+
+.drilldown-close {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.1s, color 0.1s;
+}
+.drilldown-close:hover { background: var(--red-bg); color: var(--red); border-color: var(--red-border); }
+
+/* ─��� Body: source + sidebar ───────────────────────────────────────────── */
+.drilldown-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Source viewer ────────────────────────────────────────────────────── */
+.source-viewer {
+  flex: 1;
+  overflow: auto;
+  padding: 0.75rem 0;
+  border-right: 1px solid var(--border);
+}
+
+.source-line {
+  display: flex;
+  align-items: flex-start;
+  padding: 0 1.25rem;
+  min-width: max-content;
+  transition: background 0.08s;
+}
+.source-line:hover { background: rgba(255,255,255,0.03); }
+
+.source-line-hl {
+  background: rgba(245, 158, 11, 0.1);
+  border-left: 3px solid var(--amber);
+  padding-left: calc(1.25rem - 3px);
+}
+.source-line-hl:hover { background: rgba(245, 158, 11, 0.15); }
+
+.line-num {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  text-align: right;
+  margin-right: 1.5rem;
+  user-select: none;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+.source-line-hl .line-num { color: var(--amber); opacity: 1; font-weight: 600; }
+
+.line-content {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────── */
+.drilldown-sidebar {
+  width: 320px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  background: var(--surface);
+}
+
+.sidebar-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sidebar-summary {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.45;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.sidebar-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+
+.sidebar-text {
+  font-size: 0.85rem;
+  color: var(--text);
+  line-height: 1.65;
+}
+
+.sidebar-refactor {
+  font-size: 0.85rem;
+  color: var(--text);
+  line-height: 1.65;
+  padding: 0.6rem 0.8rem;
+  background: var(--surface-2);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+}
+
+.lineref-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.lineref-chip {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.75rem;
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--amber);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 4px;
+  padding: 0.15rem 0.45rem;
+  cursor: default;
+}
+
 /* ── Severity badge ───────────────────────────────────────────────────── */
 .sev-badge {
   display: inline-flex;

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import RepoInput from './components/RepoInput.jsx';
 import HealthDashboard from './components/HealthDashboard.jsx';
 import DebtList from './components/DebtList.jsx';
+import FileDrilldown from './components/FileDrilldown.jsx';
 
 export default function App() {
   const [result, setResult] = useState(null);
@@ -32,6 +33,13 @@ export default function App() {
 
   return (
     <div className="app">
+      {selectedItem && result?.fileContents && (
+        <FileDrilldown
+          item={selectedItem}
+          fileContent={result.fileContents[selectedItem.file] ?? ''}
+          onClose={() => setSelectedItem(null)}
+        />
+      )}
       <header className="app-header">
         <h1 className="app-title">DebtLens</h1>
         <p className="app-subtitle">Technical debt scanner for GitHub repositories</p>
