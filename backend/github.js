@@ -199,22 +199,21 @@ async function orderByRecency(owner, repo, branch, candidatePaths) {
       `${GITHUB_API}/repos/${owner}/${repo}/commits?sha=${branch}&per_page=30`
     );
 
-    // Bound how many commit-detail requests we make so we never blow the
-    // rate limit chasing recency.
     const COMMIT_DETAIL_BUDGET = 25;
-    let used = 0;
+    const toFetch = commits.slice(0, COMMIT_DETAIL_BUDGET);
 
-    for (const commit of commits) {
-      if (ordered.length >= FILE_CAP || used >= COMMIT_DETAIL_BUDGET) break;
-      const detail = await ghFetch(
-        `${GITHUB_API}/repos/${owner}/${repo}/commits/${commit.sha}`
-      );
-      used++;
+    // Fetch all commit details in parallel — same result, much faster.
+    const details = await Promise.all(
+      toFetch.map((c) =>
+        ghFetch(`${GITHUB_API}/repos/${owner}/${repo}/commits/${c.sha}`)
+      )
+    );
+
+    // Process in chronological order (most-recent first) to preserve recency ranking.
+    for (const detail of details) {
+      if (ordered.length >= FILE_CAP) break;
       for (const file of detail.files || []) {
-        if (
-          candidateSet.has(file.filename) &&
-          !seen.has(file.filename)
-        ) {
+        if (candidateSet.has(file.filename) && !seen.has(file.filename)) {
           seen.add(file.filename);
           ordered.push(file.filename);
           if (ordered.length >= FILE_CAP) break;
@@ -288,17 +287,22 @@ export async function getRepoFiles(repoUrl) {
       `(cap ${FILE_CAP}). Fetching contents...`
   );
 
-  const files = [];
-  for (const path of selected) {
-    const sha = shaByPath.get(path);
-    if (!sha) continue;
-    try {
-      const content = await fetchBlob(owner, repo, sha);
-      files.push({ path, sha, content });
-    } catch (err) {
-      console.warn(`   ⚠️  Skipping ${path}: ${err.message}`);
-    }
-  }
+  // Fetch all blobs in parallel — each is cached by SHA so re-runs are free.
+  const files = (
+    await Promise.all(
+      selected.map(async (path) => {
+        const sha = shaByPath.get(path);
+        if (!sha) return null;
+        try {
+          const content = await fetchBlob(owner, repo, sha);
+          return { path, sha, content };
+        } catch (err) {
+          console.warn(`   ⚠️  Skipping ${path}: ${err.message}`);
+          return null;
+        }
+      })
+    )
+  ).filter(Boolean);
 
   return {
     meta: { owner, repo, ...meta, fileCount: files.length, fileCap: FILE_CAP },

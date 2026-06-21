@@ -26,7 +26,7 @@ import {
 } from './llmExtractor.js';
 import { scoreRepo, WEIGHTS } from './scorer.js';
 
-const PER_CATEGORY_LIMIT = 10;
+const PER_CATEGORY_LIMIT = 5;
 
 /**
  * Run the full static-analysis pass over a repo.
@@ -98,36 +98,56 @@ export function selectDependencyFiles(fileMetrics, limit = PER_CATEGORY_LIMIT) {
     .slice(0, limit);
 }
 
+// Run at most CONCURRENCY LLM calls simultaneously to stay within rate limits
+// while still being much faster than fully sequential.
+const CONCURRENCY = 10;
+
+async function runWithConcurrency(tasks) {
+  const results = new Array(tasks.length);
+  let idx = 0;
+  async function worker() {
+    while (idx < tasks.length) {
+      const i = idx++;
+      results[i] = await tasks[i]();
+    }
+  }
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+  return results;
+}
+
 /**
  * Run all four debt-category extractions over their selected files.
+ * All LLM calls run in parallel (capped at CONCURRENCY) across all categories.
  * @returns flat array of { file, category, debtItems } (already line-validated)
  */
 export async function extractAllDebt(files, fileMetrics) {
   const contentByPath = new Map(files.map((f) => [f.path, f]));
 
   const jobs = [
-    { name: 'complexity', fn: extractComplexityDebt, files: selectComplexityFiles(fileMetrics) },
-    { name: 'test', fn: extractTestDebt, files: selectTestDebtFiles(fileMetrics) },
-    { name: 'dependency', fn: extractDependencyDebt, files: selectDependencyFiles(fileMetrics) },
+    { name: 'complexity',    fn: extractComplexityDebt,    files: selectComplexityFiles(fileMetrics) },
+    { name: 'test',          fn: extractTestDebt,          files: selectTestDebtFiles(fileMetrics) },
+    { name: 'dependency',    fn: extractDependencyDebt,    files: selectDependencyFiles(fileMetrics) },
     { name: 'documentation', fn: extractDocumentationDebt, files: selectDocumentationFiles(fileMetrics) },
   ];
 
-  const results = [];
+  const total = jobs.reduce((s, j) => s + j.files.length, 0);
+  console.log(`\n🤖 LLM extraction — ${total} file(s) across 4 categories (concurrency ${CONCURRENCY})...`);
+
+  const tasks = [];
   for (const job of jobs) {
-    console.log(
-      `\n🤖 ${job.name} debt — analyzing ${job.files.length} candidate file(s)...`
-    );
     for (const metrics of job.files) {
       const file = contentByPath.get(metrics.path);
       if (!file) continue;
-      process.stdout.write(`   • ${metrics.path} ... `);
-      const result = await job.fn(file, metrics);
-      console.log(`${result.debtItems.length} grounded item(s)`);
-      results.push(result);
+      tasks.push(async () => {
+        const result = await job.fn(file, metrics);
+        console.log(`   ✓ [${job.name}] ${metrics.path} — ${result.debtItems.length} item(s)`);
+        return result;
+      });
     }
   }
 
-  return results;
+  const settled = await runWithConcurrency(tasks);
+  return settled.filter(Boolean);
 }
 
 async function main() {

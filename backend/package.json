@@ -7,6 +7,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "server": "node server.js",
     "analyze": "node index.js",
     "demo": "node index.js https://github.com/sindresorhus/slugify",
     "demo:express": "node index.js https://github.com/expressjs/express"
@@ -15,6 +16,8 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.105.0"
+    "@anthropic-ai/sdk": "^0.105.0",
+    "cors": "^2.8.6",
+    "express": "^4.22.2"
   }
 }
