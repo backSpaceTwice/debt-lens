@@ -55,6 +55,43 @@ function extOf(filePath) {
 }
 
 /**
+ * Try `python3 -m py_compile`, then fall back to `python` if python3 is absent.
+ * Normalises all three outcomes into the same {checked, ok, output} shape:
+ *   - python3 (or python) succeeds        → checked:true,  ok:true
+ *   - both python3 and python are missing  → checked:false, ok:true  (skip)
+ *   - syntax error reported by interpreter → checked:true,  ok:false
+ *
+ * @param {string} absFilePath  absolute path to the file under check
+ * @param {string} repoPath     scratch repo root (used as cwd)
+ * @returns {Promise<{checked: boolean, ok: boolean, output: string}>}
+ */
+async function runPythonCheck(absFilePath, repoPath) {
+  const pyArgs = ['-m', 'py_compile', absFilePath];
+
+  // First attempt: python3
+  try {
+    const { stdout, stderr } = await execFile('python3', pyArgs, { cwd: repoPath });
+    return { checked: true, ok: true, output: (stderr || stdout || '').trim() };
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      // python3 exists but reported a syntax error.
+      return { checked: true, ok: false, output: (err.stderr || err.message || '').trim() };
+    }
+  }
+
+  // Second attempt: plain python (python3 was not found)
+  try {
+    const { stdout, stderr } = await execFile('python', pyArgs, { cwd: repoPath });
+    return { checked: true, ok: true, output: (stderr || stdout || '').trim() };
+  } catch (err2) {
+    if (err2.code === 'ENOENT') {
+      return { checked: false, ok: true, output: 'python not installed — check skipped' };
+    }
+    return { checked: true, ok: false, output: (err2.stderr || err2.message || '').trim() };
+  }
+}
+
+/**
  * Run the per-language syntax check on a file already written to disk.
  *
  * @param {string} absFilePath  absolute path to the written file
@@ -85,10 +122,12 @@ export async function runSyntaxCheck(absFilePath, repoPath) {
     }
   }
 
+  if (checker === 'python') {
+    return runPythonCheck(absFilePath, repoPath);
+  }
+
   const commands = {
     node: ['node', ['--check', absFilePath]],
-    // Prefer python3, fall back to python — handled below.
-    python: ['python3', ['-m', 'py_compile', absFilePath]],
     go: ['go', ['vet', absFilePath]],
   };
 
@@ -97,22 +136,6 @@ export async function runSyntaxCheck(absFilePath, repoPath) {
     const { stdout, stderr } = await execFile(cmd, args, { cwd: repoPath });
     return { checked: true, ok: true, output: (stderr || stdout || '').trim() };
   } catch (err) {
-    // python3 missing → retry with python; tool missing entirely → skip check.
-    if (checker === 'python' && err.code === 'ENOENT') {
-      try {
-        const { stdout, stderr } = await execFile(
-          'python',
-          ['-m', 'py_compile', absFilePath],
-          { cwd: repoPath }
-        );
-        return { checked: true, ok: true, output: (stderr || stdout || '').trim() };
-      } catch (err2) {
-        if (err2.code === 'ENOENT') {
-          return { checked: false, ok: true, output: 'python not installed — check skipped' };
-        }
-        return { checked: true, ok: false, output: (err2.stderr || err2.message || '').trim() };
-      }
-    }
     if (err.code === 'ENOENT') {
       return { checked: false, ok: true, output: `${cmd} not installed — check skipped` };
     }
