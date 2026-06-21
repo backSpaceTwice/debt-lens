@@ -166,6 +166,82 @@ function changedOriginalLines(original, rewritten) {
 }
 
 /**
+ * Validate the parsed model response against all four server-side safety gates.
+ *
+ * @param {object} parsed          the parsed JSON reply from the model
+ * @param {number[]} originalRefs  the debt item's lineRefs
+ * @param {string} fileContent     the original file content
+ * @returns {{ ok: true, changedLineRefs: number[] }
+ *          | { ok: false, declineResult: object }}
+ */
+function validateFixResponse(parsed, originalRefs, fileContent) {
+  // ── Gate 1: model voluntarily abstained (rewrittenContent null). ──────────
+  if (parsed.rewrittenContent === null || parsed.rewrittenContent === undefined) {
+    return {
+      ok: false,
+      declineResult: decline(
+        "this change requires understanding business context the model doesn't have. " +
+          'Review the suggestion manually.',
+        { confidence: parsed.confidence, fixSummary: parsed.fixSummary }
+      ),
+    };
+  }
+
+  // ── Gate 2: rewrittenContent must be a complete, non-empty file string. ───
+  if (typeof parsed.rewrittenContent !== 'string' || parsed.rewrittenContent.trim() === '') {
+    return {
+      ok: false,
+      declineResult: decline('model returned an empty or non-string rewrittenContent.'),
+    };
+  }
+
+  // ── Gate 3: confidence floor (honest integer, ≥ 65). ─────────────────────
+  const confidence = Number(parsed.confidence);
+  if (!Number.isFinite(confidence)) {
+    return {
+      ok: false,
+      declineResult: decline('model returned a non-numeric confidence.'),
+    };
+  }
+  if (confidence < CONFIDENCE_FLOOR) {
+    return {
+      ok: false,
+      declineResult: decline(
+        `model confidence ${confidence} is below the ${CONFIDENCE_FLOOR} floor.`,
+        { confidence, fixSummary: parsed.fixSummary }
+      ),
+    };
+  }
+
+  // ── Gate 4: ground the change in the ACTUAL diff, not the model's report. ──
+  // The model's changedLineRefs is unreliable (often empty even on real edits),
+  // so we derive the changed original-file lines from the diff itself.
+  const changedLineRefs = changedOriginalLines(fileContent, parsed.rewrittenContent);
+  if (changedLineRefs.length === 0) {
+    // No diff at all → the model returned the file unchanged.
+    return {
+      ok: false,
+      declineResult: decline(
+        'the model returned the file unchanged — there was nothing to safely rewrite.',
+        { confidence, fixSummary: parsed.fixSummary }
+      ),
+    };
+  }
+  if (!refsOverlap(changedLineRefs, originalRefs)) {
+    return {
+      ok: false,
+      declineResult: decline(
+        `the rewrite touched lines [${changedLineRefs.join(', ')}] but the debt item ` +
+          `flags lines [${originalRefs.join(', ')}] — the change is unrelated to the finding.`,
+        { confidence }
+      ),
+    };
+  }
+
+  return { ok: true, changedLineRefs };
+}
+
+/**
  * Generate an auto-fix for one debt item.
  *
  * @param {{path: string, content: string}} file  the original file
@@ -240,50 +316,12 @@ export async function generateFix(file, debtItem) {
     return decline(`model did not return valid JSON — ${err.message}`);
   }
 
-  // ── Gate 1: model voluntarily abstained (rewrittenContent null). ──────────
-  if (parsed.rewrittenContent === null || parsed.rewrittenContent === undefined) {
-    return decline(
-      "this change requires understanding business context the model doesn't have. " +
-        'Review the suggestion manually.',
-      { confidence: parsed.confidence, fixSummary: parsed.fixSummary }
-    );
+  const validation = validateFixResponse(parsed, originalRefs, file.content);
+  if (!validation.ok) {
+    return validation.declineResult;
   }
 
-  // ── Gate 2: rewrittenContent must be a complete, non-empty file string. ───
-  if (typeof parsed.rewrittenContent !== 'string' || parsed.rewrittenContent.trim() === '') {
-    return decline('model returned an empty or non-string rewrittenContent.');
-  }
-
-  // ── Gate 3: confidence floor (honest integer, ≥ 65). ─────────────────────
-  const confidence = Number(parsed.confidence);
-  if (!Number.isFinite(confidence)) {
-    return decline('model returned a non-numeric confidence.');
-  }
-  if (confidence < CONFIDENCE_FLOOR) {
-    return decline(
-      `model confidence ${confidence} is below the ${CONFIDENCE_FLOOR} floor.`,
-      { confidence, fixSummary: parsed.fixSummary }
-    );
-  }
-
-  // ── Gate 4: ground the change in the ACTUAL diff, not the model's report. ──
-  // The model's changedLineRefs is unreliable (often empty even on real edits),
-  // so we derive the changed original-file lines from the diff itself.
-  const changedLineRefs = changedOriginalLines(file.content, parsed.rewrittenContent);
-  if (changedLineRefs.length === 0) {
-    // No diff at all → the model returned the file unchanged.
-    return decline(
-      'the model returned the file unchanged — there was nothing to safely rewrite.',
-      { confidence, fixSummary: parsed.fixSummary }
-    );
-  }
-  if (!refsOverlap(changedLineRefs, originalRefs)) {
-    return decline(
-      `the rewrite touched lines [${changedLineRefs.join(', ')}] but the debt item ` +
-        `flags lines [${originalRefs.join(', ')}] — the change is unrelated to the finding.`,
-      { confidence }
-    );
-  }
+  const { changedLineRefs } = validation;
 
   // Passed every gate. Carry the original content through so 9c can diff
   // without re-fetching, and 9b can write the rewritten file directly.
@@ -292,7 +330,7 @@ export async function generateFix(file, debtItem) {
     fix: {
       file: file.path,
       fixSummary: parsed.fixSummary ?? '',
-      confidence,
+      confidence: Number(parsed.confidence),
       changedLineRefs,
       rewrittenContent: parsed.rewrittenContent,
       verificationSteps: Array.isArray(parsed.verificationSteps)
@@ -308,5 +346,6 @@ export const __internals = {
   parseJsonReply,
   refsOverlap,
   changedOriginalLines,
+  validateFixResponse,
   CONFIDENCE_FLOOR,
 };
