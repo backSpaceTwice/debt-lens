@@ -444,6 +444,42 @@
 }
 .overall-label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
 
+/* ── Tooltips (dashboard cards) ──────────────────────────────────────── */
+.tooltip-anchor { position: relative; }
+
+.tooltip-bubble {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 12px;
+  width: 210px;
+  background: var(--accent-card-bg);
+  color: var(--accent-card-text);
+  border: 1px solid var(--accent-card-border);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.74rem;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 30;
+  box-shadow: 0 10px 28px rgba(19, 22, 43, 0.22);
+}
+.tooltip-bubble::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--accent-card-bg);
+}
+.tooltip-anchor:hover .tooltip-bubble { opacity: 1; }
+
 /* ── Score ring ───────────────────────────────────────────────────────── */
 .score-ring {
   position: relative;

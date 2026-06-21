@@ -19,6 +19,15 @@ const SLIDER_COLORS = {
   documentation: '#5468c4',
 };
 
+const CATEGORY_TOOLTIPS = {
+  complexity:    'Measures nesting depth, file length, and function count. High complexity makes code harder to debug and easier to break during changes.',
+  test:          'Tracks files with no corresponding test file. Untested code has no safety net when requirements change.',
+  dependency:    'Flags packages older than 1 year. Stale dependencies accumulate security vulnerabilities and compatibility risk over time.',
+  documentation: 'Counts public functions and classes with no docstring or JSDoc comment. Undocumented APIs slow down every engineer who touches the code after you.',
+};
+
+const OVERALL_TOOLTIP = "Weighted average of all four categories. Weights are adjustable below to match your team's priorities.";
+
 function severityToHealth(severity) {
   return Math.round(100 - severity);
 }
@@ -43,10 +52,11 @@ function CategoryCard({ category, severity }) {
   const health = severityToHealth(severity);
   const cls = healthColorClass(health);
   return (
-    <div className={`category-card ${cls}-border`}>
+    <div className={`category-card tooltip-anchor ${cls}-border`}>
       <div className="category-name">{CATEGORY_LABELS[category]}</div>
       <div className={`category-score ${cls}`}>{health}</div>
       <div className="category-band-label">{bandLabel(health)}</div>
+      <span className="tooltip-bubble">{CATEGORY_TOOLTIPS[category]}</span>
     </div>
   );
 }
@@ -90,9 +100,10 @@ export default function HealthDashboard({ data }) {
             <span className="meta-pill">Analyzed {formatDate(meta.analyzedAt)}</span>
           </div>
         </div>
-        <div className="overall-right">
+        <div className="overall-right tooltip-anchor">
           <div className="overall-label">Overall Health</div>
           <ScoreRing score={overallHealth} />
+          <span className="tooltip-bubble">{OVERALL_TOOLTIP}</span>
         </div>
       </div>
 
