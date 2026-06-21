@@ -19,3 +19,10 @@ export function toRanges(lineRefs) {
   ranges.push(start === end ? `${start}` : `${start}-${end}`);
   return ranges.join(', ');
 }
+
+/** Color band for a 0–100 health score (green > 70, amber 40–70, red < 40). */
+export function healthColorClass(score) {
+  if (score > 70) return 'score-green';
+  if (score >= 40) return 'score-amber';
+  return 'score-red';
+}

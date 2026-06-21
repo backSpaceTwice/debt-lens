@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import TopBar from './components/TopBar.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import RepoInput from './components/RepoInput.jsx';
@@ -97,6 +97,48 @@ export default function App() {
   const [loadingSteps, setLoadingSteps] = useState([]);
   const [error, setError]             = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
+  const [repos, setRepos] = useState([]);
+
+  async function refreshRepos() {
+    try {
+      const res = await fetch('/api/repos');
+      if (res.ok) setRepos(await res.json());
+    } catch {
+      // Sidebar history is best-effort — silently skip on failure.
+    }
+  }
+
+  useEffect(() => {
+    refreshRepos();
+  }, []);
+
+  async function handleSelectRepo(owner, repo) {
+    setError(null);
+    setSelectedItem(null);
+    try {
+      const res = await fetch(`/api/repos/${owner}/${repo}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+      setResult(await res.json());
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleDeleteRepo(owner, repo) {
+    try {
+      await fetch(`/api/repos/${owner}/${repo}`, { method: 'DELETE' });
+    } catch {
+      // Best-effort — refreshRepos() below will reflect whatever the server actually has.
+    }
+    if (result?.meta?.fullName === `${owner}/${repo}`) {
+      setResult(null);
+      setSelectedItem(null);
+    }
+    refreshRepos();
+  }
 
   async function handleAnalyze(repoUrl, fileCount) {
     setLoading(true);
@@ -138,6 +180,7 @@ export default function App() {
             setLoadingSteps((prev) => [...prev, msg]);
           } else if (msg.type === 'done') {
             setResult(msg.result);
+            refreshRepos();
           } else if (msg.type === 'error') {
             throw new Error(msg.message);
           }
@@ -164,7 +207,13 @@ export default function App() {
       <TopBar />
 
       <div className="app-body">
-        <Sidebar />
+        <Sidebar
+          repos={repos}
+          activeFullName={result?.meta?.fullName ?? null}
+          onSelectRepo={handleSelectRepo}
+          onDeleteRepo={handleDeleteRepo}
+          loading={loading}
+        />
 
         <div className="app-content">
           <header className="app-header">

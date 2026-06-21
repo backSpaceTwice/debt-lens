@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { healthColorClass } from '../utils.js';
 
 const CATEGORY_LABELS = {
   complexity:    'Complexity',
@@ -22,12 +23,6 @@ function severityToHealth(severity) {
   return Math.round(100 - severity);
 }
 
-function colorClass(score) {
-  if (score > 70) return 'score-green';
-  if (score >= 40) return 'score-amber';
-  return 'score-red';
-}
-
 function bandLabel(score) {
   if (score > 70) return 'Healthy';
   if (score >= 40) return 'Needs attention';
@@ -35,7 +30,7 @@ function bandLabel(score) {
 }
 
 function ScoreRing({ score }) {
-  const cls = colorClass(score);
+  const cls = healthColorClass(score);
   return (
     <div className={`score-ring ${cls}`} style={{ '--score': score }}>
       <span className="score-ring-value">{score}</span>
@@ -46,7 +41,7 @@ function ScoreRing({ score }) {
 
 function CategoryCard({ category, severity }) {
   const health = severityToHealth(severity);
-  const cls = colorClass(health);
+  const cls = healthColorClass(health);
   return (
     <div className={`category-card ${cls}-border`}>
       <div className="category-name">{CATEGORY_LABELS[category]}</div>

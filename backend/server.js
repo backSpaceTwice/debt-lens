@@ -6,6 +6,7 @@ import express from 'express';
 import cors from 'cors';
 import { analyzeRepo, extractAllDebt, runAutoFix, discardAutoFix, pushAutoFix } from './index.js';
 import { scoreRepo, WEIGHTS } from './scorer.js';
+import { saveResult, listRepos, getRepo, deleteRepo } from './repoStore.js';
 
 const app = express();
 app.use(cors());
@@ -50,27 +51,53 @@ app.post('/analyze', async (req, res) => {
       if (debtPaths.has(f.path)) fileContents[f.path] = f.content;
     }
 
-    send('done', {
-      result: {
-        meta: {
-          fullName: meta.fullName,
-          language: meta.language ?? null,
-          fileCount: fileMetrics.length,
-          analyzedAt: new Date().toISOString(),
-        },
-        overallHealth,
-        categoryScores,
-        fileScores,
-        debtResults,
-        fileContents,
+    const result = {
+      meta: {
+        fullName: meta.fullName,
+        language: meta.language ?? null,
+        fileCount: fileMetrics.length,
+        analyzedAt: new Date().toISOString(),
       },
-    });
+      overallHealth,
+      categoryScores,
+      fileScores,
+      debtResults,
+      fileContents,
+    };
+    saveResult(result);
+    send('done', { result });
   } catch (err) {
     console.error('Analysis error:', err.message);
     send('error', { message: err.message });
   }
 
   res.end();
+});
+
+// ── Multi-repo history (cached analyses, no re-analyzing) ──────────────────
+// GET /api/repos → summary list of cached repos, most-recently-analyzed first
+app.get('/api/repos', (req, res) => {
+  res.json(listRepos());
+});
+
+// GET /api/repos/:owner/:repo → full cached result for one repo
+app.get('/api/repos/:owner/:repo', (req, res) => {
+  const { owner, repo } = req.params;
+  const result = getRepo(owner, repo);
+  if (!result) {
+    return res.status(404).json({ error: `No cached analysis for ${owner}/${repo}` });
+  }
+  res.json(result);
+});
+
+// DELETE /api/repos/:owner/:repo → remove one repo from the history cache
+app.delete('/api/repos/:owner/:repo', (req, res) => {
+  const { owner, repo } = req.params;
+  const existed = deleteRepo(owner, repo);
+  if (!existed) {
+    return res.status(404).json({ error: `No cached analysis for ${owner}/${repo}` });
+  }
+  res.json({ ok: true });
 });
 
 // ── Auto-fix (Step 9) ──────────────────────────────────────────────────────

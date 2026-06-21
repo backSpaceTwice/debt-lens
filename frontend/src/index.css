@@ -125,6 +125,112 @@
 .sidebar-brand-title { font-size: 0.88rem; font-weight: 700; color: var(--text); }
 .sidebar-brand-version { font-size: 0.75rem; color: var(--text-muted); }
 
+.sidebar-section-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 0.6rem;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border-radius: 8px;
+  transition: background 0.12s;
+}
+.history-item:hover { background: var(--surface); }
+.history-item-active { background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); }
+
+.history-item-main {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.5rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.history-item-main:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.history-delete-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 0;
+  height: 22px;
+  margin-right: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  overflow: hidden;
+  transition: opacity 0.12s, width 0.12s, margin-right 0.12s, background 0.12s, color 0.12s;
+}
+.history-item:hover .history-delete-btn,
+.history-item:focus-within .history-delete-btn {
+  width: 22px;
+  margin-right: 0.3rem;
+  opacity: 1;
+}
+.history-delete-btn:hover:not(:disabled) { background: var(--red-bg); color: var(--red); }
+.history-delete-btn:disabled { width: 0 !important; opacity: 0 !important; cursor: not-allowed; }
+
+.history-score {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 22px;
+  padding: 0 0.3rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.history-score.score-green { background: var(--green-bg); color: var(--green); }
+.history-score.score-amber { background: var(--amber-bg); color: var(--amber); }
+.history-score.score-red   { background: var(--red-bg);   color: var(--red); }
+
+.history-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0.05rem;
+}
+
+.history-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-time {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
 /* ── Repo input ───────────────────────────────────────────────────────── */
 .repo-input-container { display: flex; flex-direction: column; gap: 0.75rem; }
 
