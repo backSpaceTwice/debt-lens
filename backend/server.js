@@ -4,7 +4,7 @@
 import './env.js';
 import express from 'express';
 import cors from 'cors';
-import { analyzeRepo, extractAllDebt } from './index.js';
+import { analyzeRepo, extractAllDebt, runAutoFix, discardAutoFix } from './index.js';
 import { scoreRepo, WEIGHTS } from './scorer.js';
 
 const app = express();
@@ -71,6 +71,40 @@ app.post('/analyze', async (req, res) => {
   }
 
   res.end();
+});
+
+// ── Auto-fix (Step 9) ──────────────────────────────────────────────────────
+// POST /api/autofix → generate + apply (isolated branch) + syntax-check + diff
+app.post('/api/autofix', async (req, res) => {
+  const { file, debtItem } = req.body ?? {};
+  if (!file?.path || typeof file.content !== 'string' || !debtItem) {
+    return res
+      .status(400)
+      .json({ error: 'file ({ path, content }) and debtItem are required' });
+  }
+
+  try {
+    const result = await runAutoFix(file, debtItem);
+    res.json(result);
+  } catch (err) {
+    console.error('Auto-fix error:', err.message);
+    res.status(500).json({ status: 'error', reason: err.message });
+  }
+});
+
+// DELETE /api/autofix/discard → tear down the temp branch + scratch repo
+app.delete('/api/autofix/discard', async (req, res) => {
+  const { repoPath, branch } = req.body ?? {};
+  if (!repoPath) {
+    return res.status(400).json({ error: 'repoPath is required' });
+  }
+  try {
+    await discardAutoFix(repoPath, branch);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Discard error:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 const PORT = process.env.PORT ?? 3001;

@@ -25,6 +25,9 @@ import {
   extractDocumentationDebt,
 } from './llmExtractor.js';
 import { scoreRepo, WEIGHTS } from './scorer.js';
+import { generateFix } from './autoFix/fixGenerator.js';
+import { applyGeneratedFix, discardFix } from './autoFix/fixApplier.js';
+import { buildDiffForFix } from './autoFix/diffBuilder.js';
 
 const PER_CATEGORY_LIMIT = 5;
 
@@ -156,6 +159,81 @@ export async function extractAllDebt(files, fileMetrics, onProgress = null) {
 
   const settled = await runWithConcurrency(tasks);
   return settled.filter(Boolean);
+}
+
+// ---------------------------------------------------------------------------
+// Step 9 — auto-fix orchestration (9a generate → 9b apply+gate → 9c diff).
+// These are the logic layer; server.js registers the HTTP routes that call them.
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate, apply (to an isolated temp branch), syntax-check, and diff a fix for
+ * one debt item. Never touches the user's repo (see autoFix/fixApplier.js).
+ *
+ * @param {{path: string, content: string}} file   original file (path + content)
+ * @param {object} debtItem  the debt item to fix (carries lineRefs + refactorSuggestion)
+ * @returns {Promise<object>} one of:
+ *   { status: 'declined', reason, confidence?, fixSummary? }   — dropped by a 9a gate
+ *   { status: 'syntax_failed', reason, detail? }               — failed the 9b syntax gate
+ *   { status: 'error', reason }                                — apply failed unexpectedly
+ *   { status: 'applied', diff, hasChanges, fix, branch, commitHash, repoPath,
+ *     syntaxChecked }                                          — ready for the UI
+ *
+ * The returned `fix` is slimmed for the wire (no original/rewritten blobs — the
+ * diff already carries the change). `repoPath` is handed back so the caller can
+ * later discard the scratch repo.
+ */
+export async function runAutoFix(file, debtItem) {
+  const gen = await generateFix(file, debtItem);
+  if (gen.status !== 'generated') {
+    // 9a declined — reason is safe to show the user verbatim.
+    return {
+      status: 'declined',
+      reason: gen.reason,
+      confidence: gen.confidence,
+      fixSummary: gen.fixSummary,
+    };
+  }
+
+  const applied = await applyGeneratedFix(file, gen.fix);
+  if (!applied.success) {
+    const isSyntax = applied.reason === 'syntax check failed';
+    return {
+      status: isSyntax ? 'syntax_failed' : 'error',
+      reason: applied.reason,
+      detail: applied.detail,
+    };
+  }
+
+  const diff = buildDiffForFix(gen.fix);
+  // createTwoFilesPatch emits a hunk header (@@) only when content differs.
+  const hasChanges = /^@@/m.test(diff);
+
+  return {
+    status: 'applied',
+    diff,
+    hasChanges,
+    branch: applied.branch,
+    commitHash: applied.commitHash,
+    repoPath: applied.repoPath,
+    syntaxChecked: applied.syntaxChecked,
+    fix: {
+      file: gen.fix.file,
+      fixSummary: gen.fix.fixSummary,
+      confidence: applied.effectiveConfidence, // capped at 70 for unchecked langs
+      changedLineRefs: gen.fix.changedLineRefs,
+      verificationSteps: gen.fix.verificationSteps,
+    },
+  };
+}
+
+/**
+ * Discard a previously applied fix: delete the temp branch and remove the
+ * scratch repo. Safe to call with a missing/already-cleaned repoPath.
+ */
+export async function discardAutoFix(repoPath, branch) {
+  if (!repoPath) return;
+  await discardFix(repoPath, branch);
 }
 
 async function main() {

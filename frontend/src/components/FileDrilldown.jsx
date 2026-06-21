@@ -1,4 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { toRanges } from '../utils.js';
+import AutoFixPanel from './AutoFixPanel.jsx';
 
 const CAT_LABEL = {
   complexity:    'Complexity',
@@ -15,16 +17,17 @@ function severityClass(s) {
 
 export default function FileDrilldown({ item, fileContent, onClose }) {
   const firstHlRef = useRef(null);
+  const [showAutoFix, setShowAutoFix] = useState(false);
   const lineRefSet = new Set(item.lineRefs ?? []);
   const lines = (fileContent ?? '// file content unavailable').split('\n');
   const lineNumWidth = String(lines.length).length;
 
-  // Close on Escape
+  // Close on Escape — but defer to the auto-fix panel when it's open.
   useEffect(() => {
-    function onKey(e) { if (e.key === 'Escape') onClose(); }
+    function onKey(e) { if (e.key === 'Escape' && !showAutoFix) onClose(); }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, showAutoFix]);
 
   // Scroll to first highlighted line whenever item changes
   useEffect(() => {
@@ -104,6 +107,12 @@ export default function FileDrilldown({ item, fileContent, onClose }) {
               <div className="sidebar-section">
                 <span className="sidebar-label">Suggested fix</span>
                 <p className="sidebar-refactor">{item.refactorSuggestion}</p>
+                <button
+                  className="btn btn-primary autofix-trigger"
+                  onClick={() => setShowAutoFix(true)}
+                >
+                  ✨ Auto-fix this
+                </button>
               </div>
             )}
 
@@ -111,8 +120,8 @@ export default function FileDrilldown({ item, fileContent, onClose }) {
               <div className="sidebar-section">
                 <span className="sidebar-label">Flagged lines</span>
                 <div className="lineref-chips">
-                  {item.lineRefs.map((ln) => (
-                    <span key={ln} className="lineref-chip">L{ln}</span>
+                  {toRanges(item.lineRefs).split(', ').map((r) => (
+                    <span key={r} className="lineref-chip">{r}</span>
                   ))}
                 </div>
               </div>
@@ -120,6 +129,14 @@ export default function FileDrilldown({ item, fileContent, onClose }) {
           </aside>
         </div>
       </div>
+
+      {showAutoFix && (
+        <AutoFixPanel
+          item={item}
+          fileContent={fileContent}
+          onClose={() => setShowAutoFix(false)}
+        />
+      )}
     </div>
   );
 }
