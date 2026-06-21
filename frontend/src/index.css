@@ -943,6 +943,8 @@
   border-top: 1px solid var(--border);
 }
 .autofix-applied-note { font-size: 0.85rem; color: var(--text-muted); }
+.autofix-applied-note a { color: var(--accent); }
+.autofix-apply-error { font-size: 0.82rem; color: var(--red); }
 .autofix-applied-note code {
   font-family: 'SF Mono', 'Fira Code', monospace;
   color: var(--green);

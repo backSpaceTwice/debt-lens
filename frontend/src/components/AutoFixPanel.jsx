@@ -34,12 +34,17 @@ function diffLines(diff) {
   });
 }
 
-export default function AutoFixPanel({ item, fileContent, onClose }) {
+export default function AutoFixPanel({ item, fileContent, repoFullName, onClose }) {
   const [phase, setPhase] = useState('loading'); // loading | done
   const [stepIdx, setStepIdx] = useState(0);
   const [result, setResult] = useState(null);
-  const [applied, setApplied] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [applyResult, setApplyResult] = useState(null); // {mode:'pushed'|'download', ...}
+  const [applyError, setApplyError] = useState(null);
+  const applied = applyResult !== null;
+
+  // "owner/repo" → parts for the push endpoint.
+  const [owner, repo] = (repoFullName ?? '/').split('/');
 
   // Keep the latest applied-fix coordinates for unmount cleanup without
   // re-running the effect.
@@ -128,13 +133,49 @@ export default function AutoFixPanel({ item, fileContent, onClose }) {
   }
 
   async function handleApply() {
-    // No remote push in the MVP — surface the branch the user can merge.
-    setApplied(true);
-    cleanupRef.current.applied = true;
+    setApplyError(null);
+    setApplying(true);
     try {
-      await navigator.clipboard.writeText(result.branch);
-      setCopied(true);
-    } catch { /* clipboard may be blocked; branch name is still shown */ }
+      const res = await fetch('/api/autofix/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repoPath: result.repoPath,
+          branch: result.branch,
+          owner,
+          repo,
+          fix: result.fix,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.status === 'error') {
+        setApplyError(data.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      // The backend consumed (and removed) the scratch repo — don't re-discard.
+      cleanupRef.current = { repoPath: null, branch: null, applied: true };
+
+      if (data.status === 'pushed') {
+        setApplyResult({ mode: 'pushed', compareUrl: data.compareUrl });
+        window.open(data.compareUrl, '_blank', 'noopener,noreferrer');
+      } else if (data.status === 'download') {
+        // No write access / no token → download the rewritten file instead.
+        const blob = new Blob([data.content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = data.filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        setApplyResult({ mode: 'download', filename: data.filename, reason: data.reason });
+      }
+    } catch (err) {
+      setApplyError(err.message);
+    } finally {
+      setApplying(false);
+    }
   }
 
   async function handleDiscard() {
@@ -245,18 +286,28 @@ export default function AutoFixPanel({ item, fileContent, onClose }) {
               )}
 
               <div className="autofix-actions">
-                {applied ? (
+                {applyResult?.mode === 'pushed' ? (
                   <span className="autofix-applied-note">
-                    {copied ? 'Branch name copied — ' : ''}merge <code>{r.branch}</code> when ready.
+                    Pushed to GitHub —{' '}
+                    <a href={applyResult.compareUrl} target="_blank" rel="noreferrer">
+                      open the pull request
+                    </a>
+                    .
+                  </span>
+                ) : applyResult?.mode === 'download' ? (
+                  <span className="autofix-applied-note">
+                    Downloaded <code>{applyResult.filename}</code> — apply it manually.
+                    {applyResult.reason ? ` (${applyResult.reason})` : ''}
                   </span>
                 ) : (
                   <>
-                    <button className="btn btn-primary" onClick={handleApply}>
-                      Apply fix
+                    <button className="btn btn-primary" onClick={handleApply} disabled={applying}>
+                      {applying ? 'Applying…' : 'Apply fix'}
                     </button>
-                    <button className="btn btn-ghost" onClick={handleDiscard}>
+                    <button className="btn btn-ghost" onClick={handleDiscard} disabled={applying}>
                       Discard
                     </button>
+                    {applyError && <span className="autofix-apply-error">{applyError}</span>}
                   </>
                 )}
               </div>

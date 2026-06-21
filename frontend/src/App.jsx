@@ -154,6 +154,7 @@ export default function App() {
         <FileDrilldown
           item={selectedItem}
           fileContent={result.fileContents[selectedItem.file] ?? ''}
+          repoFullName={result.meta?.fullName}
           onClose={() => setSelectedItem(null)}
         />
       )}

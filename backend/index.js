@@ -28,6 +28,7 @@ import { scoreRepo, WEIGHTS } from './scorer.js';
 import { generateFix } from './autoFix/fixGenerator.js';
 import { applyGeneratedFix, discardFix } from './autoFix/fixApplier.js';
 import { buildDiffForFix } from './autoFix/diffBuilder.js';
+import { pushFixToGitHub } from './autoFix/githubPush.js';
 
 const PER_CATEGORY_LIMIT = 5;
 
@@ -234,6 +235,15 @@ export async function runAutoFix(file, debtItem) {
 export async function discardAutoFix(repoPath, branch) {
   if (!repoPath) return;
   await discardFix(repoPath, branch);
+}
+
+/**
+ * Apply a generated fix to the real GitHub repo via GITHUB_TOKEN, or fall back
+ * to returning the rewritten file for download. Consumes (and cleans up) the
+ * scratch repo at repoPath. See autoFix/githubPush.js.
+ */
+export async function pushAutoFix(args) {
+  return pushFixToGitHub(args);
 }
 
 async function main() {

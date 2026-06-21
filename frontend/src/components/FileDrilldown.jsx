@@ -15,7 +15,7 @@ function severityClass(s) {
   return 'sev-green';
 }
 
-export default function FileDrilldown({ item, fileContent, onClose }) {
+export default function FileDrilldown({ item, fileContent, repoFullName, onClose }) {
   const firstHlRef = useRef(null);
   const [showAutoFix, setShowAutoFix] = useState(false);
   const lineRefSet = new Set(item.lineRefs ?? []);
@@ -134,6 +134,7 @@ export default function FileDrilldown({ item, fileContent, onClose }) {
         <AutoFixPanel
           item={item}
           fileContent={fileContent}
+          repoFullName={repoFullName}
           onClose={() => setShowAutoFix(false)}
         />
       )}
