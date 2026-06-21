@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { toRanges } from '../utils.js';
 
 const CATEGORIES = ['complexity', 'test', 'dependency', 'documentation'];
 
@@ -15,10 +16,6 @@ function severityClass(s) {
   return 'sev-green';
 }
 
-function itemKey(item) {
-  return `${item.file}::${item.id}`;
-}
-
 function SortButton({ label, sortKey, current, dir, onSort }) {
   const active = current === sortKey;
   return (
@@ -32,7 +29,7 @@ function SortButton({ label, sortKey, current, dir, onSort }) {
   );
 }
 
-function DebtRow({ item, expanded, onToggle, onSelect }) {
+function DebtRow({ item, rowKey, expanded, onToggle, onSelect }) {
   return (
     <div className={`debt-row-wrapper${expanded ? ' expanded' : ''}`}>
       <div
@@ -47,9 +44,6 @@ function DebtRow({ item, expanded, onToggle, onSelect }) {
         </span>
         <span className={`cat-tag cat-${item.category}`}>
           {CAT_LABEL[item.category]}
-        </span>
-        <span className="debt-file" title={item.file}>
-          {item.file}
         </span>
         <span className="debt-summary">{item.summary}</span>
         <span className="expand-arrow">{expanded ? '▲' : '▼'}</span>
@@ -70,10 +64,7 @@ function DebtRow({ item, expanded, onToggle, onSelect }) {
           {item.lineRefs?.length > 0 && (
             <div className="detail-meta">
               <span className="detail-label">Lines</span>
-              <span className="detail-linerefs">
-                {item.lineRefs.slice(0, 10).join(', ')}
-                {item.lineRefs.length > 10 ? ` +${item.lineRefs.length - 10} more` : ''}
-              </span>
+              <span className="detail-linerefs">{toRanges(item.lineRefs)}</span>
               <button
                 className="btn btn-ghost btn-sm view-file-btn"
                 onClick={(e) => { e.stopPropagation(); onSelect(item); }}
@@ -84,6 +75,30 @@ function DebtRow({ item, expanded, onToggle, onSelect }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function FileGroup({ file, items, expandedKey, onToggle, onSelect }) {
+  return (
+    <div className="file-group">
+      <div className="file-group-header">
+        <span className="file-group-path">{file}</span>
+        <span className="file-group-count">{items.length} issue{items.length !== 1 ? 's' : ''}</span>
+      </div>
+      {items.map((item, i) => {
+        const key = `${file}::${item.id}::${i}`;
+        return (
+          <DebtRow
+            key={key}
+            rowKey={key}
+            item={item}
+            expanded={expandedKey === key}
+            onToggle={() => onToggle(key)}
+            onSelect={onSelect}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -123,16 +138,27 @@ export default function DebtList({ debtResults, onSelect }) {
     setExpandedKey((prev) => (prev === key ? null : key));
   }
 
-  const displayed = useMemo(() => {
+  // Sort items, then group by file preserving the order of first appearance.
+  // This means the file whose top item ranks highest comes first.
+  const grouped = useMemo(() => {
     const filtered = allItems.filter((item) => active.has(item.category));
-    return [...filtered].sort((a, b) => {
+    const sorted = [...filtered].sort((a, b) => {
       let cmp = 0;
       if (sortKey === 'severity') cmp = a.severity - b.severity;
       else if (sortKey === 'category') cmp = a.category.localeCompare(b.category);
       else if (sortKey === 'file') cmp = a.file.localeCompare(b.file);
       return sortDir === 'desc' ? -cmp : cmp;
     });
+
+    const map = new Map();
+    for (const item of sorted) {
+      if (!map.has(item.file)) map.set(item.file, []);
+      map.get(item.file).push(item);
+    }
+    return [...map.entries()]; // [[file, items[]], ...]
   }, [allItems, active, sortKey, sortDir]);
+
+  const totalDisplayed = grouped.reduce((s, [, items]) => s + items.length, 0);
 
   if (allItems.length === 0) return null;
 
@@ -141,7 +167,7 @@ export default function DebtList({ debtResults, onSelect }) {
       <div className="debt-list-toolbar">
         <h2 className="debt-list-title">
           Debt Items
-          <span className="debt-count">{displayed.length}</span>
+          <span className="debt-count">{totalDisplayed}</span>
         </h2>
         <div className="debt-filters">
           {CATEGORIES.map((cat) => (
@@ -164,24 +190,21 @@ export default function DebtList({ debtResults, onSelect }) {
         <div className="debt-table-head">
           <SortButton label="Severity" sortKey="severity" current={sortKey} dir={sortDir} onSort={toggleSort} />
           <SortButton label="Category" sortKey="category" current={sortKey} dir={sortDir} onSort={toggleSort} />
-          <SortButton label="File"     sortKey="file"     current={sortKey} dir={sortDir} onSort={toggleSort} />
           <span className="col-summary">Summary</span>
           <span />
         </div>
 
         <div className="debt-table-body">
-          {displayed.map((item, i) => {
-            const key = `${itemKey(item)}::${i}`;
-            return (
-              <DebtRow
-                key={key}
-                item={item}
-                expanded={expandedKey === key}
-                onToggle={() => toggleExpand(key)}
-                onSelect={onSelect}
-              />
-            );
-          })}
+          {grouped.map(([file, items]) => (
+            <FileGroup
+              key={file}
+              file={file}
+              items={items}
+              expandedKey={expandedKey}
+              onToggle={toggleExpand}
+              onSelect={onSelect}
+            />
+          ))}
         </div>
       </div>
     </div>

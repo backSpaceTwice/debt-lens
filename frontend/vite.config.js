@@ -6,6 +6,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/analyze': 'http://localhost:3001',
+      '/api': 'http://localhost:3001',
     },
   },
 });
