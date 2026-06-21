@@ -24,6 +24,7 @@ import {
   extractDependencyDebt,
   extractDocumentationDebt,
 } from './llmExtractor.js';
+import { scoreRepo, WEIGHTS } from './scorer.js';
 
 const PER_CATEGORY_LIMIT = 10;
 
@@ -150,6 +151,13 @@ async function main() {
       console.log(JSON.stringify(result, null, 2));
     }
 
+    // Severity scoring.
+    const { overallHealth, categoryScores, fileScores } = scoreRepo(
+      fileMetrics,
+      debtResults,
+      WEIGHTS
+    );
+
     // Per-category tally.
     const byCategory = {};
     let total = 0;
@@ -161,6 +169,18 @@ async function main() {
     console.log(`\n✅ ${meta.fullName}: ${total} debt item(s) total`);
     for (const cat of ['complexity', 'test', 'dependency', 'documentation']) {
       console.log(`   ${cat.padEnd(14)} ${byCategory[cat] || 0}`);
+    }
+
+    console.log('\n===== Repo health scores =====');
+    console.log(`   Overall health   ${overallHealth}/100`);
+    console.log(`   Weights: complexity=${WEIGHTS.complexity} test=${WEIGHTS.test} deps=${WEIGHTS.dependency} docs=${WEIGHTS.documentation}`);
+    console.log('\n   Per-category debt severity (avg of LLM-graded items):');
+    for (const cat of ['complexity', 'test', 'dependency', 'documentation']) {
+      console.log(`   ${cat.padEnd(14)} ${categoryScores[cat]}`);
+    }
+    console.log('\n   Top 5 files by severity score:');
+    for (const f of fileScores.slice(0, 5)) {
+      console.log(`   ${f.score.toFixed(1).padStart(5)}  ${f.path}`);
     }
   } catch (err) {
     console.error(`\n❌ ${err.message}`);
