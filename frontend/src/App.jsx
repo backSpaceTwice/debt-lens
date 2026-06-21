@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import TopBar from './components/TopBar.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import RepoInput from './components/RepoInput.jsx';
@@ -13,28 +13,22 @@ const STAGES = [
   { key: 'scoring',  label: 'Scoring results' },
 ];
 
+// Maps each stage key to the step names that indicate it is done or active.
+// doneWhen: any of these steps in `seen` means the stage has completed.
+// activeWhen: any of these steps in `seen` means the stage is in progress.
+const STAGE_SENTINELS = {
+  fetch:    { doneWhen: ['fetch_done', 'analysis', 'analysis_done', 'llm', 'scoring'], activeWhen: ['fetch'] },
+  analysis: { doneWhen: ['analysis_done', 'llm', 'scoring'],                           activeWhen: ['analysis'] },
+  llm:      { doneWhen: ['scoring'],                                                    activeWhen: ['llm', 'analysis_done'] },
+  scoring:  { doneWhen: [],                                                             activeWhen: ['scoring'] },
+};
+
 function stageState(key, steps) {
   const seen = new Set(steps.map((s) => s.step));
-  const after = (k) => {
-    const idx = STAGES.findIndex((s) => s.key === k);
-    return STAGES.slice(idx + 1).some((s) => seen.has(s.key));
-  };
-
-  if (key === 'fetch') {
-    if (seen.has('fetch_done') || after('fetch')) return 'done';
-    if (seen.has('fetch')) return 'active';
-  }
-  if (key === 'analysis') {
-    if (seen.has('analysis_done') || seen.has('llm') || seen.has('scoring')) return 'done';
-    if (seen.has('analysis')) return 'active';
-  }
-  if (key === 'llm') {
-    if (seen.has('scoring')) return 'done';
-    if (seen.has('llm') || seen.has('analysis_done')) return 'active';
-  }
-  if (key === 'scoring') {
-    if (seen.has('scoring')) return 'active';
-  }
+  const sentinels = STAGE_SENTINELS[key];
+  if (!sentinels) return 'pending';
+  if (sentinels.doneWhen.some((s) => seen.has(s))) return 'done';
+  if (sentinels.activeWhen.some((s) => seen.has(s))) return 'active';
   return 'pending';
 }
 
@@ -97,48 +91,6 @@ export default function App() {
   const [loadingSteps, setLoadingSteps] = useState([]);
   const [error, setError]             = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
-  const [repos, setRepos] = useState([]);
-
-  async function refreshRepos() {
-    try {
-      const res = await fetch('/api/repos');
-      if (res.ok) setRepos(await res.json());
-    } catch {
-      // Sidebar history is best-effort — silently skip on failure.
-    }
-  }
-
-  useEffect(() => {
-    refreshRepos();
-  }, []);
-
-  async function handleSelectRepo(owner, repo) {
-    setError(null);
-    setSelectedItem(null);
-    try {
-      const res = await fetch(`/api/repos/${owner}/${repo}`);
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? `HTTP ${res.status}`);
-      }
-      setResult(await res.json());
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function handleDeleteRepo(owner, repo) {
-    try {
-      await fetch(`/api/repos/${owner}/${repo}`, { method: 'DELETE' });
-    } catch {
-      // Best-effort — refreshRepos() below will reflect whatever the server actually has.
-    }
-    if (result?.meta?.fullName === `${owner}/${repo}`) {
-      setResult(null);
-      setSelectedItem(null);
-    }
-    refreshRepos();
-  }
 
   async function handleAnalyze(repoUrl, fileCount) {
     setLoading(true);
@@ -180,7 +132,6 @@ export default function App() {
             setLoadingSteps((prev) => [...prev, msg]);
           } else if (msg.type === 'done') {
             setResult(msg.result);
-            refreshRepos();
           } else if (msg.type === 'error') {
             throw new Error(msg.message);
           }
@@ -207,13 +158,7 @@ export default function App() {
       <TopBar />
 
       <div className="app-body">
-        <Sidebar
-          repos={repos}
-          activeFullName={result?.meta?.fullName ?? null}
-          onSelectRepo={handleSelectRepo}
-          onDeleteRepo={handleDeleteRepo}
-          loading={loading}
-        />
+        <Sidebar />
 
         <div className="app-content">
           <header className="app-header">
