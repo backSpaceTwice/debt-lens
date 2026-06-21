@@ -12,10 +12,10 @@ const CATEGORIES = ['complexity', 'test', 'dependency', 'documentation'];
 const DEFAULT_WEIGHTS = { complexity: 35, test: 30, dependency: 20, documentation: 15 };
 
 const SLIDER_COLORS = {
-  complexity:    '#6366f1',
-  test:          '#22c55e',
-  dependency:    '#f59e0b',
-  documentation: '#3b82f6',
+  complexity:    '#e8973a',
+  test:          '#1f9d6e',
+  dependency:    '#7c5cd6',
+  documentation: '#5468c4',
 };
 
 function severityToHealth(severity) {
@@ -37,7 +37,7 @@ function bandLabel(score) {
 function ScoreRing({ score }) {
   const cls = colorClass(score);
   return (
-    <div className={`score-ring ${cls}`}>
+    <div className={`score-ring ${cls}`} style={{ '--score': score }}>
       <span className="score-ring-value">{score}</span>
       <span className="score-ring-label">/100</span>
     </div>
@@ -94,7 +94,6 @@ export default function HealthDashboard({ data }) {
             <span className="meta-pill">{meta.fileCount} files analyzed</span>
             <span className="meta-pill">Analyzed {formatDate(meta.analyzedAt)}</span>
           </div>
-          <p className="repo-meta-note">Top 50 most-recently-modified files</p>
         </div>
         <div className="overall-right">
           <div className="overall-label">Overall Health</div>

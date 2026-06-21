@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import TopBar from './components/TopBar.jsx';
+import Sidebar from './components/Sidebar.jsx';
 import RepoInput from './components/RepoInput.jsx';
 import HealthDashboard from './components/HealthDashboard.jsx';
 import DebtList from './components/DebtList.jsx';
@@ -159,28 +161,36 @@ export default function App() {
         />
       )}
 
-      <header className="app-header">
-        <h1 className="app-title">DebtLens</h1>
-        <p className="app-subtitle">Technical debt scanner for GitHub repositories</p>
-      </header>
+      <TopBar />
 
-      <main className="app-main">
-        <RepoInput onAnalyze={handleAnalyze} loading={loading} />
+      <div className="app-body">
+        <Sidebar />
 
-        {loading && <LoadingSteps steps={loadingSteps} />}
+        <div className="app-content">
+          <header className="app-header">
+            <h1 className="app-title">DebtLens</h1>
+            <p className="app-subtitle">Technical debt scanner for GitHub repositories</p>
+          </header>
 
-        {error && <ErrorState message={error} />}
+          <main className="app-main">
+            <RepoInput onAnalyze={handleAnalyze} loading={loading} />
 
-        {result && !loading && (
-          <>
-            <HealthDashboard data={result} />
-            <DebtList
-              debtResults={result.debtResults}
-              onSelect={setSelectedItem}
-            />
-          </>
-        )}
-      </main>
+            {loading && <LoadingSteps steps={loadingSteps} />}
+
+            {error && <ErrorState message={error} />}
+
+            {result && !loading && (
+              <>
+                <HealthDashboard data={result} />
+                <DebtList
+                  debtResults={result.debtResults}
+                  onSelect={setSelectedItem}
+                />
+              </>
+            )}
+          </main>
+        </div>
+      </div>
     </div>
   );
 }
