@@ -33,8 +33,9 @@ line refs are dropped before they ever reach the UI.
 GitHub URL
    │
    ▼
-github.js          fetch up to 50 most-recently-modified source files
-   │               (skips node_modules, lockfiles, config, binaries)
+github.js          fetch the N most-recently-modified source files
+   │               (N is user-chosen, default 30, capped at 50; skips
+   │               node_modules, lockfiles, config, binaries)
    ▼
 staticAnalysis.js  per-file metrics — loc, functionCount, maxNestingDepth,
    │               todoCount, hasTestFile, docstringRatio, dependencyAge
@@ -70,7 +71,7 @@ DebtLens/
 ├── backend/
 │   ├── server.js            # Express server — /analyze (SSE) + auto-fix routes
 │   ├── index.js             # Pipeline orchestration + CLI driver
-│   ├── github.js            # GitHub API traversal (50-file cap, in-memory cache)
+│   ├── github.js            # GitHub API traversal (default 30 files, cap 50, in-memory cache)
 │   ├── staticAnalysis.js    # Deterministic per-file metrics (no LLM)
 │   ├── llmExtractor.js      # Anthropic calls + line-ref validation (4 categories)
 │   ├── scorer.js            # Severity formula + repo/category scoring
@@ -132,7 +133,8 @@ npm run dev               # Vite dev server; proxies /analyze and /api to :3001
 ```
 
 Open the printed URL, paste a public GitHub repo (pre-loaded with
-`expressjs/express`), pick a file count (1–50), and hit **Analyze**.
+`expressjs/express`), pick a file count (1–50, defaults to 30), and hit
+**Analyze**.
 
 ### CLI (no frontend)
 
@@ -176,8 +178,9 @@ Auto-fix is built so a bad suggestion can never corrupt your code:
 
 ## Key constraints
 
-- **50-file cap**, always enforced and surfaced in the UI ("most recently
-  modified files" — a defensible recency heuristic).
+- **File cap of 50**, with a default of 30 — adjustable in the UI, always
+  surfaced and enforced server-side ("most recently modified files" — a
+  defensible recency heuristic).
 - **Line-ref validation:** any finding referencing an out-of-bounds line is
   dropped and logged — never displayed.
 - **Rate limits:** GitHub is 60 req/hour unauthenticated; file contents are

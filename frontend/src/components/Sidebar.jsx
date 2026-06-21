@@ -44,7 +44,7 @@ export default function Sidebar({ repos = [], activeFullName, onSelectRepo, onDe
         <span className="sidebar-brand-icon"><TerminalIcon /></span>
         <div>
           <div className="sidebar-brand-title">Project Analysis</div>
-          <div className="sidebar-brand-version">v2.4.0-stable</div>
+          <div className="sidebar-brand-version">v0.1.0</div>
         </div>
       </div>
 
