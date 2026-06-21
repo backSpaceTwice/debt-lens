@@ -4,11 +4,12 @@
 //   node index.js <github-url>
 //
 // Step 1: traverse the repo and run the static-analysis pass (no LLM).
-// Step 2: pick the 10 files with the highest loc × maxNestingDepth score,
-//         send each to the Anthropic API, and print validated, line-grounded
-//         complexity-debt items.
+// Step 2: complexity-debt extraction (top files by loc × maxNestingDepth).
+// Step 3: extend extraction to all four categories — complexity, test,
+//         dependency, documentation — each selected by its own static-metric
+//         criterion and validated with the same line-ref grounding.
 //
-// Later steps add the other debt categories, scoring, and an Express server.
+// Later steps add severity scoring and an Express server.
 
 import './env.js'; // load .env before anything reads process.env
 import { getRepoFiles } from './github.js';
@@ -17,13 +18,18 @@ import {
   analyzeDependencies,
   buildRepoIndex,
 } from './staticAnalysis.js';
-import { extractComplexityDebt } from './llmExtractor.js';
+import {
+  extractComplexityDebt,
+  extractTestDebt,
+  extractDependencyDebt,
+  extractDocumentationDebt,
+} from './llmExtractor.js';
 
-const COMPLEXITY_FILE_LIMIT = 10;
+const PER_CATEGORY_LIMIT = 10;
 
 /**
  * Run the full static-analysis pass over a repo.
- * Returns the file contents alongside the metrics so later (LLM) steps can use
+ * Returns the file contents alongside the metrics so the LLM steps can use
  * both without re-fetching.
  */
 export async function analyzeRepo(repoUrl) {
@@ -46,42 +52,78 @@ export async function analyzeRepo(repoUrl) {
   return { meta, files, fileMetrics };
 }
 
-/**
- * Pick the files to run complexity extraction on: highest loc × maxNestingDepth.
- * Only real source files are eligible — markdown/config carry no code-complexity
- * debt, so we don't spend LLM calls on them.
- */
-export function selectComplexityFiles(fileMetrics, limit = COMPLEXITY_FILE_LIMIT) {
+// ---------------------------------------------------------------------------
+// Per-category file selection — each criterion comes straight from CLAUDE.md.
+// Only real source files are eligible for code-level categories.
+// ---------------------------------------------------------------------------
+
+const isSource = (m) => m.language !== 'other';
+
+/** Complexity: highest loc × maxNestingDepth. */
+export function selectComplexityFiles(fileMetrics, limit = PER_CATEGORY_LIMIT) {
   return fileMetrics
-    .filter((m) => m.language !== 'other')
-    .map((m) => ({ metrics: m, score: m.loc * m.maxNestingDepth }))
+    .filter(isSource)
+    .map((m) => ({ m, score: m.loc * m.maxNestingDepth }))
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
-    .map((x) => x.metrics);
+    .map((x) => x.m);
+}
+
+/** Test debt: files with no corresponding test file (largest first). */
+export function selectTestDebtFiles(fileMetrics, limit = PER_CATEGORY_LIMIT) {
+  return fileMetrics
+    .filter((m) => isSource(m) && m.hasTestFile === false)
+    .sort((a, b) => b.loc - a.loc)
+    .slice(0, limit);
+}
+
+/** Documentation debt: docstringRatio < 0.5 with functionCount > 5. */
+export function selectDocumentationFiles(fileMetrics, limit = PER_CATEGORY_LIMIT) {
+  return fileMetrics
+    .filter((m) => isSource(m) && m.functionCount > 5 && m.docstringRatio < 0.5)
+    .sort((a, b) => b.functionCount - a.functionCount)
+    .slice(0, limit);
+}
+
+/** Dependency debt: manifests with a dependency older than ~365 days. */
+export function selectDependencyFiles(fileMetrics, limit = PER_CATEGORY_LIMIT) {
+  return fileMetrics
+    .filter(
+      (m) =>
+        m.dependency &&
+        (m.dependency.staleCount > 0 || m.dependency.maxDependencyAge > 365)
+    )
+    .sort((a, b) => b.dependency.maxDependencyAge - a.dependency.maxDependencyAge)
+    .slice(0, limit);
 }
 
 /**
- * Step 2: run complexity-debt extraction over the selected files.
- * @returns array of { file, debtItems } (debtItems already line-validated)
+ * Run all four debt-category extractions over their selected files.
+ * @returns flat array of { file, category, debtItems } (already line-validated)
  */
-export async function extractComplexityForRepo(files, fileMetrics) {
+export async function extractAllDebt(files, fileMetrics) {
   const contentByPath = new Map(files.map((f) => [f.path, f]));
-  const selected = selectComplexityFiles(fileMetrics);
 
-  console.log(
-    `\n🤖 Extracting complexity debt from the top ${selected.length} files ` +
-      `by loc × maxNestingDepth (Anthropic API)...`
-  );
+  const jobs = [
+    { name: 'complexity', fn: extractComplexityDebt, files: selectComplexityFiles(fileMetrics) },
+    { name: 'test', fn: extractTestDebt, files: selectTestDebtFiles(fileMetrics) },
+    { name: 'dependency', fn: extractDependencyDebt, files: selectDependencyFiles(fileMetrics) },
+    { name: 'documentation', fn: extractDocumentationDebt, files: selectDocumentationFiles(fileMetrics) },
+  ];
 
   const results = [];
-  for (const metrics of selected) {
-    const file = contentByPath.get(metrics.path);
-    if (!file) continue;
-    const score = metrics.loc * metrics.maxNestingDepth;
-    process.stdout.write(`   • ${metrics.path} (score ${score}) ... `);
-    const result = await extractComplexityDebt(file, metrics);
-    console.log(`${result.debtItems.length} grounded item(s)`);
-    results.push(result);
+  for (const job of jobs) {
+    console.log(
+      `\n🤖 ${job.name} debt — analyzing ${job.files.length} candidate file(s)...`
+    );
+    for (const metrics of job.files) {
+      const file = contentByPath.get(metrics.path);
+      if (!file) continue;
+      process.stdout.write(`   • ${metrics.path} ... `);
+      const result = await job.fn(file, metrics);
+      console.log(`${result.debtItems.length} grounded item(s)`);
+      results.push(result);
+    }
   }
 
   return results;
@@ -99,26 +141,26 @@ async function main() {
     const { meta, files, fileMetrics } = await analyzeRepo(repoUrl);
     console.log(`   Static analysis done for ${fileMetrics.length} files.`);
 
-    const debtResults = await extractComplexityForRepo(files, fileMetrics);
+    const debtResults = await extractAllDebt(files, fileMetrics);
 
-    // Print the validated, line-grounded debt items (Step 2 done-when).
-    console.log('\n===== Complexity debt (validated, line-grounded) =====\n');
+    // Print the validated, line-grounded debt items (per file, per category).
+    console.log('\n===== Debt items (validated, line-grounded) =====\n');
     for (const result of debtResults) {
       if (result.debtItems.length === 0) continue;
       console.log(JSON.stringify(result, null, 2));
     }
 
-    const filesWithDebt = debtResults.filter((r) => r.debtItems.length > 0).length;
-    const totalItems = debtResults.reduce((n, r) => n + r.debtItems.length, 0);
+    // Per-category tally.
+    const byCategory = {};
+    let total = 0;
+    for (const r of debtResults) {
+      byCategory[r.category] = (byCategory[r.category] || 0) + r.debtItems.length;
+      total += r.debtItems.length;
+    }
 
-    console.log(
-      `\n✅ ${meta.fullName}: ${totalItems} complexity-debt item(s) across ` +
-        `${filesWithDebt} file(s) (of ${debtResults.length} analyzed).`
-    );
-    if (filesWithDebt < 3) {
-      console.log(
-        'ℹ️  Fewer than 3 files returned grounded debt — try a larger / messier repo.'
-      );
+    console.log(`\n✅ ${meta.fullName}: ${total} debt item(s) total`);
+    for (const cat of ['complexity', 'test', 'dependency', 'documentation']) {
+      console.log(`   ${cat.padEnd(14)} ${byCategory[cat] || 0}`);
     }
   } catch (err) {
     console.error(`\n❌ ${err.message}`);
